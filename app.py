@@ -4,6 +4,7 @@ from __future__ import annotations
 import queue
 import threading
 import time
+import weakref
 from typing import Any
 
 import av
@@ -174,7 +175,10 @@ class EmotionVideoProcessor(VideoProcessorBase):
         self._last_submit_at = 0.0
         self._frame_count = 0
         self._worker = threading.Thread(
-            target=self._analysis_loop, name="emotion-analysis", daemon=True
+            target=EmotionVideoProcessor._analysis_loop,
+            args=(weakref.ref(self),),
+            name="emotion-analysis",
+            daemon=True,
         )
         self._worker.start()
 
@@ -196,37 +200,64 @@ class EmotionVideoProcessor(VideoProcessorBase):
             except queue.Full:
                 pass
 
-    def _analysis_loop(self) -> None:
-        while not self._closed.is_set():
+    @staticmethod
+    def _analysis_loop(
+        processor_ref: "weakref.ReferenceType[EmotionVideoProcessor]",
+    ) -> None:
+        # Use a weak reference so a stopped WebRTC session can release its worker.
+        # In particular, never keep the processor itself alive while waiting on the queue.
+        while True:
+            processor = processor_ref()
+            if processor is None:
+                return
+            work_queue = processor._queue
+            closed = processor._closed
+            if closed.is_set():
+                return
+            del processor
+
             try:
-                image = self._queue.get(timeout=0.25)
+                image = work_queue.get(timeout=0.25)
             except queue.Empty:
+                if closed.is_set():
+                    return
                 continue
-            if image is None:
+            if image is None or closed.is_set():
                 return
 
+            processor = processor_ref()
+            if processor is None:
+                return
             started = time.perf_counter()
             try:
                 incoming = analyze_bgr(image)
-                with self._lock:
-                    self._predictions = _smooth_predictions(self._predictions, incoming)
-                    self._last_detected_at = time.monotonic()
-                    self._status = f"Detected {len(self._predictions)} face(s)"
-                    self._latency = time.perf_counter() - started
+                with processor._lock:
+                    processor._predictions = _smooth_predictions(
+                        processor._predictions, incoming
+                    )
+                    processor._last_detected_at = time.monotonic()
+                    processor._status = (
+                        f"Detected {len(processor._predictions)} face(s)"
+                    )
+                    processor._latency = time.perf_counter() - started
             except Exception as exc:
                 message = safe_error_message(exc)
                 no_face = isinstance(exc, ValueError) and "face" in str(exc).lower()
-                with self._lock:
-                    elapsed = time.monotonic() - self._last_detected_at
-                    if no_face and self._predictions and elapsed < 1.4:
-                        self._status = "Face briefly lost · holding the last result"
+                with processor._lock:
+                    elapsed = time.monotonic() - processor._last_detected_at
+                    if no_face and processor._predictions and elapsed < 1.4:
+                        processor._status = "Face briefly lost · holding the last result"
                     elif no_face:
-                        self._predictions = []
-                        self._status = "No face detected · improve lighting or face the camera"
+                        processor._predictions = []
+                        processor._status = (
+                            "No face detected · improve lighting or face the camera"
+                        )
                     else:
                         # Keep the last good overlay during temporary model errors.
-                        self._status = message
-                    self._latency = time.perf_counter() - started
+                        processor._status = message
+                    processor._latency = time.perf_counter() - started
+            finally:
+                del processor
 
     def get_snapshot(self) -> dict[str, Any]:
         with self._lock:
