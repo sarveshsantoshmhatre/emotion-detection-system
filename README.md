@@ -1,6 +1,6 @@
 # AI-Based Emotion Detection System
 
-A college-project web application that uses a pre-trained model to estimate facial-expression categories from an uploaded image or a live webcam stream.
+A college-project web application that uses a pre-trained model to estimate facial-expression categories from an uploaded image or a live webcam stream. It now includes a standalone responsive website that can be deployed with Docker to Render or Railway.
 
 > **Important limitation:** This application estimates visible facial-expression categories. It cannot reliably determine a person's internal emotional state, and must not be used for medical diagnosis, hiring, discipline, surveillance, or other high-impact decisions.
 
@@ -17,7 +17,8 @@ A college-project web application that uses a pre-trained model to estimate faci
 ## Technology stack
 
 - Python
-- Streamlit
+- FastAPI + responsive HTML/CSS/JavaScript website (Docker deploy)
+- Streamlit interface (local alternative)
 - DeepFace (pre-trained inference)
 - OpenCV
 - TensorFlow/Keras backend as required by the selected model
@@ -59,6 +60,36 @@ Open the local URL Streamlit prints (normally http://localhost:8501).
 
 The first model inference can download model weights and take longer than subsequent predictions.
 
+## Deploy the standalone website to Render or Railway
+
+The repository now includes a separate website with a live camera preview, face bounding boxes, expression labels, and score bars. It sends selected camera frames to the Python server for analysis; it does not record a video file.
+
+### Deploy to Render
+
+1. Sign in to [Render](https://render.com/) and connect your GitHub account.
+2. Create a **New Web Service** and select `sarveshsantoshmhatre/emotion-detection-system`.
+3. Choose the `main` branch and select **Docker** as the runtime (Render can build the root `Dockerfile`).
+4. Deploy. The included `render.yaml` describes the service and health check.
+5. Open the generated HTTPS URL, press **Start Camera**, and allow browser camera permission.
+
+### Deploy to Railway
+
+1. Sign in to [Railway](https://railway.com/) and create a project from GitHub.
+2. Select `sarveshsantoshmhatre/emotion-detection-system`.
+3. Railway detects the root `Dockerfile`; the included `railway.json` sets the health-check path.
+4. Deploy and generate a public domain in the service's networking settings.
+5. Open the HTTPS URL and press **Start Camera**.
+
+### Run the standalone website locally
+
+Install the requirements, then run:
+
+```bash
+uvicorn web_app:app --host 0.0.0.0 --port 8000
+```
+
+Open http://localhost:8000. The first model inference may download model weights and take longer. The deployment image needs enough memory and disk for TensorFlow and DeepFace; free hosting plans may be too limited or slow for this workload.
+
 ## Use the app
 
 1. Open **Image Analysis** and upload a clear image with a visible face.
@@ -86,7 +117,12 @@ The unit tests mock model inference; they do not validate real-world model accur
 
 ```text
 .
-├── app.py
+├── app.py                 # Streamlit interface
+├── web_app.py             # FastAPI website backend
+├── static/index.html      # Responsive live-camera website
+├── Dockerfile             # Render/Railway deployment
+├── render.yaml
+├── railway.json
 ├── emotion_engine.py
 ├── requirements.txt
 ├── tests/
