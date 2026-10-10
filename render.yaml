@@ -1,0 +1,7 @@
+services:
+  - type: web
+    name: og-detector
+    runtime: docker
+    plan: free
+    healthCheckPath: /health
+    autoDeploy: true
