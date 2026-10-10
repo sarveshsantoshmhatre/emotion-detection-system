@@ -8,3 +8,5 @@ Pillow>=10
 pandas>=2
 pytest>=8
 av>=12
+fastapi>=0.115,<1
+uvicorn[standard]>=0.30,<1
