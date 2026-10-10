@@ -1,0 +1,105 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="theme-color" content="#11131a">
+  <title>OG Detector — Live Emotion Detection</title>
+  <style>
+    :root{color-scheme:dark;--bg:#0c0e13;--panel:#171a24;--line:#2b3040;--muted:#a5adbf;--accent:#f5d547;--green:#8de2a1}
+    *{box-sizing:border-box}body{margin:0;background:radial-gradient(ellipse at top,#202638 0,var(--bg) 55%);color:#f4f5f9;font:15px/1.5 Inter,ui-sans-serif,system-ui,-apple-system,sans-serif;min-height:100vh}
+    .wrap{width:min(1180px,94vw);margin:0 auto;padding:28px 0 36px}.top{display:flex;justify-content:space-between;align-items:center;gap:16px;margin-bottom:22px}
+    .brand{font-weight:800;font-size:23px;letter-spacing:-.5px}.brand span{color:var(--accent)}.pill{border:1px solid var(--line);border-radius:999px;padding:7px 12px;color:var(--muted);font-size:12px}
+    .hero{margin-bottom:20px}.eyebrow{color:var(--accent);text-transform:uppercase;letter-spacing:2px;font-size:11px;font-weight:800}.hero h1{font-size:clamp(28px,4vw,42px);letter-spacing:-1.2px;line-height:1.1;margin:7px 0 10px}.hero p{color:var(--muted);margin:0;max-width:680px}
+    .layout{display:grid;grid-template-columns:minmax(0,1.65fr) minmax(280px,.8fr);gap:18px}.panel{background:linear-gradient(145deg,#1a1e29,#141720);border:1px solid var(--line);border-radius:18px;overflow:hidden;box-shadow:0 20px 60px #0003}
+    .panelhead{display:flex;align-items:center;justify-content:space-between;padding:15px 17px;border-bottom:1px solid var(--line);font-weight:700}.live{display:flex;align-items:center;gap:7px;font-size:12px;color:var(--muted);font-weight:600}.dot{width:7px;height:7px;border-radius:50%;background:#646b7c}.dot.on{background:#54df85;box-shadow:0 0 12px #54df8580}
+    .stage{position:relative;background:#07090d;aspect-ratio:4/3;display:grid;place-items:center;overflow:hidden}.stage video{position:absolute;width:100%;height:100%;object-fit:cover;transform:scaleX(-1)}.stage canvas{position:absolute;width:100%;height:100%;pointer-events:none}
+    .placeholder{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;padding:20px;color:var(--muted);gap:10px}.cameraicon{width:58px;height:58px;border:1px solid #3a4050;border-radius:18px;display:grid;place-items:center;font-size:25px;background:#181c27}.placeholder strong{color:#f5f6fa;font-size:16px}
+    .controls{display:flex;gap:10px;flex-wrap:wrap;padding:15px}.btn{border:1px solid var(--line);background:#242a38;color:#fff;border-radius:10px;padding:11px 16px;font:inherit;font-weight:700;cursor:pointer;transition:.15s}.btn:hover{filter:brightness(1.15)}.btn.primary{background:var(--accent);border-color:var(--accent);color:#17170c}.btn:disabled{opacity:.45;cursor:not-allowed}
+    .privacy{padding:0 16px 16px;color:var(--muted);font-size:12px}.side{padding:18px}.side h2{font-size:17px;margin:0}.sub{color:var(--muted);font-size:12px;margin:4px 0 16px}.facecard{border:1px solid var(--line);border-radius:13px;padding:15px;margin-bottom:16px;background:#11141d}.emotionrow{display:flex;align-items:center;justify-content:space-between;gap:8px}.emotion{font-size:22px;font-weight:800}.score{font-size:24px;font-weight:800;color:var(--accent)}.bar{height:7px;border-radius:99px;background:#2b3040;overflow:hidden;margin:12px 0 6px}.bar span{display:block;height:100%;background:var(--accent);width:0;transition:width .2s}.small{font-size:12px;color:var(--muted)}.scores{display:grid;gap:12px;margin-top:18px}.scoreline{display:grid;grid-template-columns:76px 1fr 36px;align-items:center;gap:9px;font-size:12px}.scoreline .bar{margin:0;height:6px}.scoreline .bar span{background:#5b9ef4}.scoreline .num{text-align:right;color:#d9deea}
+    .empty{border:1px dashed #373e50;border-radius:12px;padding:24px 14px;text-align:center;color:var(--muted);font-size:13px}.footer{display:flex;justify-content:space-between;gap:16px;flex-wrap:wrap;color:#777f92;font-size:11px;margin-top:17px}.notice{margin-top:18px;border:1px solid #4a4426;background:#262315;color:#e7dca1;padding:12px 14px;border-radius:12px;font-size:12px}
+    @media(max-width:800px){.layout{grid-template-columns:1fr}.wrap{padding-top:18px}.hero h1{font-size:32px}.stage{aspect-ratio:4/3}.top{align-items:flex-start}.pill{max-width:48%;text-align:center}}
+  </style>
+</head>
+<body>
+<div class="wrap">
+  <header class="top"><div class="brand">OG <span>Detector</span></div><div class="pill">LIVE FACIAL EXPRESSION DEMO</div></header>
+  <section class="hero"><div class="eyebrow">Computer vision · Real-time</div><h1>See expression predictions<br>as they happen.</h1><p>Turn on your camera to detect faces and display a bounding box with the current expression estimate and model score.</p></section>
+  <main class="layout">
+    <section class="panel">
+      <div class="panelhead"><span>Live camera</span><div class="live"><span class="dot" id="liveDot"></span><span id="liveState">Camera off</span></div></div>
+      <div class="stage" id="stage"><video id="video" autoplay playsinline muted></video><canvas id="overlay"></canvas><div class="placeholder" id="placeholder"><div class="cameraicon">⌾</div><strong>Your live camera preview</strong><span>Press Start Camera and allow browser access.</span></div></div>
+      <div class="controls"><button class="btn primary" id="startBtn">Start Camera</button><button class="btn" id="stopBtn" disabled>Stop Camera</button></div>
+      <div class="privacy">Camera frames are sent to this app's server for analysis while the camera is running. This app does not intentionally record or save the video. Stop the camera when finished.</div>
+    </section>
+    <aside class="panel"><div class="side"><h2>Expression analysis</h2><div class="sub" id="status">Waiting for camera</div>
+      <div id="dominant" class="facecard" hidden><div class="emotionrow"><div><div class="small">TOP PREDICTION</div><div class="emotion" id="emotion">—</div></div><div class="score" id="confidence">—%</div></div><div class="bar"><span id="mainBar"></span></div><div class="small">Model score, not a calibrated probability of internal emotion.</div></div>
+      <div id="empty" class="empty">No live result yet.<br>Start the camera and look toward it.</div>
+      <div class="scores" id="scores"></div>
+    </div></aside>
+  </main>
+  <div class="notice">For demonstration only. Facial-expression predictions do not establish a person's actual feelings and should not be used for medical, employment, educational, security, or other high-impact decisions.</div>
+  <footer class="footer"><span>DeepFace expression model · OpenCV face detector</span><span>Camera processing runs while you choose to keep it on.</span></footer>
+</div>
+<script>
+(() => {
+  const video=document.getElementById('video'), canvas=document.getElementById('overlay'), ctx=canvas.getContext('2d');
+  const startBtn=document.getElementById('startBtn'), stopBtn=document.getElementById('stopBtn'), placeholder=document.getElementById('placeholder');
+  const liveDot=document.getElementById('liveDot'), liveState=document.getElementById('liveState'), statusEl=document.getElementById('status');
+  let stream=null, timer=null, busy=false, lastFaces=[], lastRequest=0, failures=0;
+  const labels={happy:'Happy',sad:'Sad',angry:'Angry',fear:'Fear',fearful:'Fear',surprise:'Surprise',surprised:'Surprise',disgust:'Disgust',disgusted:'Disgust',neutral:'Neutral'};
+  function fitCanvas(){const r=video.getBoundingClientRect();canvas.width=Math.max(1,Math.round(r.width*devicePixelRatio));canvas.height=Math.max(1,Math.round(r.height*devicePixelRatio));drawBoxes();}
+  function drawBoxes(){
+    if(!video.videoWidth||!video.videoHeight)return;
+    ctx.clearRect(0,0,canvas.width,canvas.height);
+    const sx=canvas.width/video.videoWidth, sy=canvas.height/video.videoHeight;
+    // video is mirrored for a natural selfie view; mirror the detector coordinates too.
+    lastFaces.forEach(f=>{
+      const x=(video.videoWidth-f.x-f.w)*sx,y=f.y*sy,w=f.w*sx,h=f.h*sy;
+      if(w<=0||h<=0)return;
+      ctx.lineWidth=Math.max(2,2*devicePixelRatio);ctx.strokeStyle='#8de2a1';ctx.strokeRect(x,y,w,h);
+      const text=(labels[f.emotion.toLowerCase()]||f.emotion)+'  '+Math.round(f.confidence)+'%';
+      ctx.font='700 '+Math.round(14*devicePixelRatio)+'px system-ui';const pad=8*devicePixelRatio, th=20*devicePixelRatio, tw=ctx.measureText(text).width+pad*2;
+      const tx=Math.max(0,Math.min(canvas.width-tw,x)), ty=Math.max(th, y-5*devicePixelRatio);
+      ctx.fillStyle='#8de2a1';ctx.fillRect(tx,ty-th,tw,th);ctx.fillStyle='#142019';ctx.fillText(text,tx+pad,ty-5*devicePixelRatio);
+    });
+  }
+  function showScores(face){
+    document.getElementById('dominant').hidden=false;document.getElementById('empty').hidden=true;
+    document.getElementById('emotion').textContent=labels[face.emotion.toLowerCase()]||face.emotion;
+    document.getElementById('confidence').textContent=Math.round(face.confidence)+'%';
+    document.getElementById('mainBar').style.width=Math.max(0,Math.min(100,face.confidence))+'%';
+    const scores=Object.entries(face.scores||{}).sort((a,b)=>b[1]-a[1]);
+    document.getElementById('scores').innerHTML=scores.map(([name,val])=>'<div class="scoreline"><span>'+((labels[name.toLowerCase()]||name))+'</span><div class="bar"><span style="width:'+Math.max(0,Math.min(100,Number(val)||0))+'%"></span></div><span class="num">'+Math.round(Number(val)||0)+'%</span></div>').join('');
+  }
+  async function analyzeFrame(){
+    if(!stream||busy||video.readyState<2)return;busy=true;
+    try{
+      const maxW=640, ratio=Math.min(1,maxW/video.videoWidth), w=Math.round(video.videoWidth*ratio), h=Math.round(video.videoHeight*ratio);
+      const c=document.createElement('canvas');c.width=w;c.height=h;c.getContext('2d').drawImage(video,0,0,w,h);
+      const image=c.toDataURL('image/jpeg',.72);
+      const response=await fetch('/api/analyze',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({image})});
+      if(!response.ok)throw new Error(response.status===503?'Model is loading or unavailable. Wait a moment and try again.':'Analysis request failed.');
+      const data=await response.json();failures=0;lastFaces=(data.faces||[]).map(f=>({...f,x:f.x/ratio,y:f.y/ratio,w:f.w/ratio,h:f.h/ratio}));
+      if(lastFaces.length){showScores(lastFaces[0]);statusEl.textContent=lastFaces.length+' face'+(lastFaces.length===1?'':'s')+' detected · updating live';}
+      else{document.getElementById('dominant').hidden=true;document.getElementById('empty').hidden=false;document.getElementById('empty').innerHTML='No face detected.<br>Face the camera and improve lighting.';document.getElementById('scores').innerHTML='';statusEl.textContent='Looking for a face';}
+      drawBoxes();
+    }catch(err){failures++;statusEl.textContent=err.message||'Analysis temporarily unavailable';if(failures>3)statusEl.textContent='Server is starting or model is loading. Please wait and try again.';}
+    finally{busy=false;}
+  }
+  async function start(){
+    startBtn.disabled=true;statusEl.textContent='Requesting camera permission…';
+    try{
+      stream=await navigator.mediaDevices.getUserMedia({video:{facingMode:'user',width:{ideal:640},height:{ideal:480}},audio:false});
+      video.srcObject=stream;await video.play();placeholder.hidden=true;stopBtn.disabled=false;liveDot.classList.add('on');liveState.textContent='Live';statusEl.textContent='Loading expression model…';
+      fitCanvas();video.addEventListener('loadedmetadata',fitCanvas,{once:true});window.addEventListener('resize',fitCanvas);
+      timer=setInterval(analyzeFrame,900);analyzeFrame();
+    }catch(err){stream=null;startBtn.disabled=false;statusEl.textContent=err.name==='NotAllowedError'?'Camera permission denied. Allow camera access in your browser.':'Could not start camera. Use HTTPS or localhost and check camera availability.';}
+  }
+  function stop(){
+    if(timer)clearInterval(timer);timer=null;if(stream)stream.getTracks().forEach(t=>t.stop());stream=null;video.srcObject=null;lastFaces=[];ctx.clearRect(0,0,canvas.width,canvas.height);placeholder.hidden=false;startBtn.disabled=false;stopBtn.disabled=true;liveDot.classList.remove('on');liveState.textContent='Camera off';statusEl.textContent='Camera stopped';document.getElementById('dominant').hidden=true;document.getElementById('empty').hidden=false;document.getElementById('empty').textContent='Camera is off. Start it to see live predictions.';document.getElementById('scores').innerHTML='';
+  }
+  startBtn.addEventListener('click',start);stopBtn.addEventListener('click',stop);video.addEventListener('resize',fitCanvas);window.addEventListener('beforeunload',stop);
+})();
+</script>
+</body></html>
