@@ -1,6 +1,6 @@
 # AI-Based Emotion Detection System
 
-A college-project web application that uses a pre-trained model to estimate facial-expression categories from an uploaded image or a live webcam stream. It now includes a standalone responsive website that can be deployed with Docker to Render or Railway.
+A college-project application that uses a pre-trained model to estimate visible facial-expression categories from an uploaded image or a live webcam stream. It includes a dark Streamlit dashboard (`app.py`) and a matching standalone responsive website (`web_app.py`) that can be deployed with Docker to Render or Railway.
 
 > **Important limitation:** This application estimates visible facial-expression categories. It cannot reliably determine a person's internal emotional state, and must not be used for medical diagnosis, hiring, discipline, surveillance, or other high-impact decisions.
 
@@ -10,7 +10,9 @@ A college-project web application that uses a pre-trained model to estimate faci
 - Detect one or more faces and display expression labels
 - Show the model's expression score distribution
 - Export one selected face's score table as CSV
-- Analyze periodic frames from a browser webcam stream
+- Live camera preview with face boxes, expression labels, and a live score panel
+- Streamlit video runs independently from background model inference to reduce camera stutter
+- Matching dark dashboard style in the Streamlit app and standalone website
 - Automated tests and a GitHub Actions test workflow
 - College project report template
 
