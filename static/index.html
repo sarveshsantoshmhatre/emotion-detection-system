@@ -46,46 +46,87 @@
   const video=document.getElementById('video'), canvas=document.getElementById('overlay'), ctx=canvas.getContext('2d');
   const startBtn=document.getElementById('startBtn'), stopBtn=document.getElementById('stopBtn'), placeholder=document.getElementById('placeholder');
   const liveDot=document.getElementById('liveDot'), liveState=document.getElementById('liveState'), statusEl=document.getElementById('status');
-  let stream=null, timer=null, busy=false, lastFaces=[], lastRequest=0, failures=0;
+  const capture=document.createElement('canvas'), captureCtx=capture.getContext('2d');
+  let stream=null, timer=null, busy=false, lastFaces=[], missCount=0, failures=0, runToken=0;
   const labels={happy:'Happy',sad:'Sad',angry:'Angry',fear:'Fear',fearful:'Fear',surprise:'Surprise',surprised:'Surprise',disgust:'Disgust',disgusted:'Disgust',neutral:'Neutral'};
   function fitCanvas(){const r=video.getBoundingClientRect();canvas.width=Math.max(1,Math.round(r.width*devicePixelRatio));canvas.height=Math.max(1,Math.round(r.height*devicePixelRatio));drawBoxes();}
+  function displayName(name){return labels[String(name||'').toLowerCase()]||String(name||'Unknown');}
   function drawBoxes(){
     if(!video.videoWidth||!video.videoHeight)return;
     ctx.clearRect(0,0,canvas.width,canvas.height);
     const sx=canvas.width/video.videoWidth, sy=canvas.height/video.videoHeight;
-    // video is mirrored for a natural selfie view; mirror the detector coordinates too.
     lastFaces.forEach(f=>{
       const x=(video.videoWidth-f.x-f.w)*sx,y=f.y*sy,w=f.w*sx,h=f.h*sy;
       if(w<=0||h<=0)return;
       ctx.lineWidth=Math.max(2,2*devicePixelRatio);ctx.strokeStyle='#8de2a1';ctx.strokeRect(x,y,w,h);
-      const text=(labels[f.emotion.toLowerCase()]||f.emotion)+'  '+Math.round(f.confidence)+'%';
+      const text=displayName(f.emotion)+'  '+Math.round(f.confidence)+'%';
       ctx.font='700 '+Math.round(14*devicePixelRatio)+'px system-ui';const pad=8*devicePixelRatio, th=20*devicePixelRatio, tw=ctx.measureText(text).width+pad*2;
-      const tx=Math.max(0,Math.min(canvas.width-tw,x)), ty=Math.max(th, y-5*devicePixelRatio);
+      const tx=Math.max(0,Math.min(canvas.width-tw,x)), ty=Math.max(th,y-5*devicePixelRatio);
       ctx.fillStyle='#8de2a1';ctx.fillRect(tx,ty-th,tw,th);ctx.fillStyle='#142019';ctx.fillText(text,tx+pad,ty-5*devicePixelRatio);
     });
   }
   function showScores(face){
+    if(!face)return;
     document.getElementById('dominant').hidden=false;document.getElementById('empty').hidden=true;
-    document.getElementById('emotion').textContent=labels[face.emotion.toLowerCase()]||face.emotion;
+    document.getElementById('emotion').textContent=displayName(face.emotion);
     document.getElementById('confidence').textContent=Math.round(face.confidence)+'%';
     document.getElementById('mainBar').style.width=Math.max(0,Math.min(100,face.confidence))+'%';
     const scores=Object.entries(face.scores||{}).sort((a,b)=>b[1]-a[1]);
-    document.getElementById('scores').innerHTML=scores.map(([name,val])=>'<div class="scoreline"><span>'+((labels[name.toLowerCase()]||name))+'</span><div class="bar"><span style="width:'+Math.max(0,Math.min(100,Number(val)||0))+'%"></span></div><span class="num">'+Math.round(Number(val)||0)+'%</span></div>').join('');
+    document.getElementById('scores').innerHTML=scores.map(([name,val])=>'<div class="scoreline"><span>'+displayName(name)+'</span><div class="bar"><span style="width:'+Math.max(0,Math.min(100,Number(val)||0))+'%"></span></div><span class="num">'+Math.round(Number(val)||0)+'%</span></div>').join('');
   }
-  async function analyzeFrame(){
-    if(!stream||busy||video.readyState<2)return;busy=true;
+  function smoothFaces(incoming){
+    const old=lastFaces, used=new Set();
+    const ordered=[...incoming].sort((a,b)=>(b.w*b.h)-(a.w*a.h));
+    return ordered.map(f=>{
+      const cx=f.x+f.w/2, cy=f.y+f.h/2;let best=-1,bestDist=Infinity;
+      old.forEach((p,i)=>{if(used.has(i))return;const dx=(p.x+p.w/2)-cx,dy=(p.y+p.h/2)-cy,dist=Math.hypot(dx,dy);if(dist<bestDist){best=i;bestDist=dist;}});
+      const nearby=best>=0&&bestDist<Math.max(90,Math.hypot(old[best].w,old[best].h)*0.8);
+      if(!nearby)return f;
+      used.add(best);const p=old[best], mix=0.42, scores={}, keys=new Set([...Object.keys(p.scores||{}),...Object.keys(f.scores||{})]);
+      keys.forEach(k=>{scores[k]=(Number(p.scores?.[k]||0)*(1-mix))+(Number(f.scores?.[k]||0)*mix);});
+      let emotion=Object.keys(scores).sort((a,b)=>scores[b]-scores[a])[0]||f.emotion;
+      const previousKey=Object.keys(scores).find(k=>k.toLowerCase()===String(p.emotion).toLowerCase());
+      if(previousKey&&scores[previousKey]+7>=scores[emotion])emotion=previousKey;
+      return {x:p.x*(1-mix)+f.x*mix,y:p.y*(1-mix)+f.y*mix,w:p.w*(1-mix)+f.w*mix,h:p.h*(1-mix)+f.h*mix,emotion,confidence:Number(scores[emotion]??f.confidence),scores};
+    });
+  }
+  function clearFaceResult(){
+    lastFaces=[];document.getElementById('dominant').hidden=true;document.getElementById('empty').hidden=false;
+    document.getElementById('empty').innerHTML='No face detected.<br>Face the camera and improve lighting.';document.getElementById('scores').innerHTML='';drawBoxes();
+  }
+  async function analyzeFrame(token){
+    if(!stream||busy||video.readyState<2||token!==runToken)return;
+    busy=true;const started=performance.now();
     try{
-      const maxW=640, ratio=Math.min(1,maxW/video.videoWidth), w=Math.round(video.videoWidth*ratio), h=Math.round(video.videoHeight*ratio);
-      const c=document.createElement('canvas');c.width=w;c.height=h;c.getContext('2d').drawImage(video,0,0,w,h);
-      const image=c.toDataURL('image/jpeg',.72);
+      const maxW=512,ratio=Math.min(1,maxW/video.videoWidth),w=Math.max(1,Math.round(video.videoWidth*ratio)),h=Math.max(1,Math.round(video.videoHeight*ratio));
+      capture.width=w;capture.height=h;captureCtx.drawImage(video,0,0,w,h);
+      const image=capture.toDataURL('image/jpeg',.68);
       const response=await fetch('/api/analyze',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({image})});
-      if(!response.ok)throw new Error(response.status===503?'Model is loading or unavailable. Wait a moment and try again.':'Analysis request failed.');
-      const data=await response.json();failures=0;lastFaces=(data.faces||[]).map(f=>({...f,x:f.x/ratio,y:f.y/ratio,w:f.w/ratio,h:f.h/ratio}));
-      if(lastFaces.length){showScores(lastFaces[0]);statusEl.textContent=lastFaces.length+' face'+(lastFaces.length===1?'':'s')+' detected · updating live';}
-      else{document.getElementById('dominant').hidden=true;document.getElementById('empty').hidden=false;document.getElementById('empty').innerHTML='No face detected.<br>Face the camera and improve lighting.';document.getElementById('scores').innerHTML='';statusEl.textContent='Looking for a face';}
+      if(token!==runToken||!stream)return;
+      if(!response.ok)throw new Error(response.status===503?'Model is loading or unavailable. Wait a moment.':response.status===429?'Analysis is busy; catching up…':'Analysis request failed ('+response.status+').');
+      const data=await response.json();failures=0;
+      const faces=(data.faces||[]).map(f=>({...f,x:f.x/ratio,y:f.y/ratio,w:f.w/ratio,h:f.h/ratio}));
+      const elapsed=((performance.now()-started)/1000).toFixed(1);
+      if(faces.length){
+        missCount=0;lastFaces=smoothFaces(faces);
+        const primary=[...lastFaces].sort((a,b)=>(b.w*b.h)-(a.w*a.h))[0];showScores(primary);
+        statusEl.textContent=faces.length+' face'+(faces.length===1?'':'s')+' · response '+elapsed+' s';
+      }else{
+        missCount++;
+        if(missCount<3&&lastFaces.length){statusEl.textContent='Face briefly lost · holding last result';}
+        else{clearFaceResult();statusEl.textContent='Looking for a face · response '+elapsed+' s';}
+      }
       drawBoxes();
-    }catch(err){failures++;statusEl.textContent=err.message||'Analysis temporarily unavailable';if(failures>3)statusEl.textContent='Server is starting or model is loading. Please wait and try again.';}
-    finally{busy=false;}
+    }catch(err){
+      if(token!==runToken||!stream)return;
+      failures++;statusEl.textContent=err.message||'Analysis temporarily unavailable';
+      if(failures>3)statusEl.textContent='Server/model is busy. Keeping the most recent result while reconnecting.';
+    }finally{busy=false;}
+  }
+  async function runLoop(token){
+    if(!stream||token!==runToken)return;
+    await analyzeFrame(token);
+    if(stream&&token===runToken)timer=setTimeout(()=>runLoop(token),120);
   }
   async function start(){
     startBtn.disabled=true;statusEl.textContent='Requesting camera permission…';
@@ -93,11 +134,14 @@
       stream=await navigator.mediaDevices.getUserMedia({video:{facingMode:'user',width:{ideal:640},height:{ideal:480}},audio:false});
       video.srcObject=stream;await video.play();placeholder.hidden=true;stopBtn.disabled=false;liveDot.classList.add('on');liveState.textContent='Live';statusEl.textContent='Loading expression model…';
       fitCanvas();video.addEventListener('loadedmetadata',fitCanvas,{once:true});window.addEventListener('resize',fitCanvas);
-      timer=setInterval(analyzeFrame,900);analyzeFrame();
-    }catch(err){stream=null;startBtn.disabled=false;statusEl.textContent=err.name==='NotAllowedError'?'Camera permission denied. Allow camera access in your browser.':'Could not start camera. Use HTTPS or localhost and check camera availability.';}
+      const token=++runToken;runLoop(token);
+    }catch(err){stream=null;startBtn.disabled=false;statusEl.textContent=err.name==='NotAllowedError'?'Camera permission denied. Allow camera access in your browser.':'Could not start camera. Use HTTPS and check camera availability.';}
   }
   function stop(){
-    if(timer)clearInterval(timer);timer=null;if(stream)stream.getTracks().forEach(t=>t.stop());stream=null;video.srcObject=null;lastFaces=[];ctx.clearRect(0,0,canvas.width,canvas.height);placeholder.hidden=false;startBtn.disabled=false;stopBtn.disabled=true;liveDot.classList.remove('on');liveState.textContent='Camera off';statusEl.textContent='Camera stopped';document.getElementById('dominant').hidden=true;document.getElementById('empty').hidden=false;document.getElementById('empty').textContent='Camera is off. Start it to see live predictions.';document.getElementById('scores').innerHTML='';
+    runToken++;if(timer)clearTimeout(timer);timer=null;
+    if(stream)stream.getTracks().forEach(t=>t.stop());stream=null;video.srcObject=null;lastFaces=[];missCount=0;
+    ctx.clearRect(0,0,canvas.width,canvas.height);placeholder.hidden=false;startBtn.disabled=false;stopBtn.disabled=true;liveDot.classList.remove('on');liveState.textContent='Camera off';statusEl.textContent='Camera stopped';
+    document.getElementById('dominant').hidden=true;document.getElementById('empty').hidden=false;document.getElementById('empty').textContent='Camera is off. Start it to see live predictions.';document.getElementById('scores').innerHTML='';
   }
   startBtn.addEventListener('click',start);stopBtn.addEventListener('click',stop);video.addEventListener('resize',fitCanvas);window.addEventListener('beforeunload',stop);
 })();
