@@ -1,0 +1,15 @@
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.env
+.pytest_cache/
+.coverage
+htmlcov/
+weights/
+models/
+dataset/
+datasets/
+.streamlit/secrets.toml
+.DS_Store
+*.log
