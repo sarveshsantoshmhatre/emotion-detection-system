@@ -116,10 +116,23 @@ def annotate_image(image_bgr: np.ndarray,
         y = max(0, min(height - 1, int(area.get("y", 0))))
         x2 = max(x, min(width - 1, x + max(0, int(area.get("w", 0)))))
         y2 = max(y, min(height - 1, y + max(0, int(area.get("h", 0)))))
-        label = str(prediction.get("emotion", "unknown")).title()
-        cv2.rectangle(output, (x, y), (x2, y2), (40, 200, 80), 2)
+        emotion = str(prediction.get("emotion", "unknown"))
+        scores = prediction.get("scores", {})
+        try:
+            confidence = float(scores.get(emotion, 0.0))
+        except (TypeError, ValueError):
+            confidence = 0.0
+        label = f"{emotion.title()}  {confidence:.0f}%"
+        color = (80, 220, 120)
+        cv2.rectangle(output, (x, y), (x2, y2), color, 2)
+        font, scale, thickness = cv2.FONT_HERSHEY_SIMPLEX, 0.62, 2
+        (text_w, text_h), baseline = cv2.getTextSize(label, font, scale, thickness)
+        plate_top = max(0, y - text_h - baseline - 10)
+        plate_bottom = max(text_h + baseline + 4, y)
+        plate_right = min(width - 1, x + text_w + 12)
+        cv2.rectangle(output, (x, plate_top), (plate_right, plate_bottom), color, -1)
         cv2.putText(
-            output, label, (x, max(22, y - 8)),
-            cv2.FONT_HERSHEY_SIMPLEX, 0.65, (40, 200, 80), 2, cv2.LINE_AA
+            output, label, (x + 6, max(text_h + 2, y - 7)),
+            font, scale, (20, 30, 25), thickness, cv2.LINE_AA
         )
     return output
