@@ -20,7 +20,7 @@ st.set_page_config(
 )
 
 st.title("AI-Based Emotion Detection System")
-st.caption("Pre-trained facial-expression analysis for images and live webcam")
+st.caption("Live camera face boxes and real-time facial-expression estimates, plus optional photo analysis")
 st.warning(
     "This is an educational demonstration. It estimates visible facial-expression "
     "categories and does not establish a person's actual internal emotional state. "
@@ -71,7 +71,7 @@ class EmotionVideoProcessor(VideoProcessorBase):
 
 
 tab_image, tab_camera, tab_about = st.tabs(
-    ["Image Analysis", "Live Webcam", "About the Project"]
+    ["Live Camera", "Image Analysis", "About the Project"]
 )
 
 with tab_image:
@@ -145,14 +145,16 @@ with tab_image:
             )
 
 with tab_camera:
-    st.subheader("Real-time webcam analysis")
+    st.subheader("Live camera emotion detection")
     st.write(
-        "Select START to enable your camera. Your browser will ask for permission. "
-        "Select STOP when finished."
+        "Start the camera to see a live feed. A rectangle is drawn around each "
+        "detected face, with the top expression and score shown above it. "
+        "This does not record or save a video; select STOP to end the live feed."
     )
     st.caption(
-        "The model analyzes selected frames to reduce CPU load. First inference may "
-        "take longer while model weights are downloaded and initialized."
+        "The camera feed stays live. Expression detection runs on selected frames to "
+        "reduce CPU load, so labels may update a little slower than the video. "
+        "The first prediction may take longer while model weights load."
     )
     try:
         context = webrtc_streamer(
@@ -165,7 +167,7 @@ with tab_camera:
             async_processing=True,
         )
         if context.state.playing:
-            st.success("Webcam session is running. Use STOP to end it.")
+            st.success("Live camera is running. Face rectangles and expression labels update as frames are analyzed.")
     except Exception:
         st.error(
             "The webcam could not start. Check browser camera permissions and "
